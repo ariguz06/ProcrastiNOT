@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import type { ScheduleItem, WeeklySchedule } from '../types';
 import { BrainIcon } from './icons/BrainIcon';
 
@@ -12,8 +12,39 @@ interface ScheduleDisplayProps {
 const START_HOUR = 7; // 7 AM
 const END_HOUR = 24; // 12 AM
 
+const colorPalette = [
+    'bg-purple-900/70 border-l-4 border-purple-500 hover:bg-purple-900',
+    'bg-indigo-900/70 border-l-4 border-indigo-500 hover:bg-indigo-900',
+    'bg-sky-900/70 border-l-4 border-sky-500 hover:bg-sky-900',
+    'bg-teal-900/70 border-l-4 border-teal-500 hover:bg-teal-900',
+    'bg-rose-900/70 border-l-4 border-rose-500 hover:bg-rose-900',
+    'bg-amber-900/70 border-l-4 border-amber-500 hover:bg-amber-900',
+];
+
 const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, isLoading, error, currentWeekStart }) => {
+  const taskColorMap = useRef(new Map<string, string>());
+
+  useEffect(() => {
+    // When a new schedule is generated, clear the old color mappings
+    // to ensure colors are freshly assigned for the new set of tasks.
+    taskColorMap.current.clear();
+  }, [schedule]);
   
+  const getTaskColor = (task: string): string => {
+    // Normalize the task name to group related activities under one color.
+    // E.g., "Work on Hackathon" and "Submit Hackathon" both key to "hackathon".
+    const key = task.toLowerCase()
+      .replace(/^(work on|study for|finish|submit|prepare|review|read)\s/,'')
+      .split(/[:(]/)[0]
+      .trim();
+
+    if (!taskColorMap.current.has(key)) {
+        const nextColorIndex = taskColorMap.current.size % colorPalette.length;
+        taskColorMap.current.set(key, colorPalette[nextColorIndex]);
+    }
+    return taskColorMap.current.get(key)!;
+  };
+
   const renderContent = () => {
     if (isLoading) {
       return (
@@ -179,17 +210,20 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, isLoading, 
                     const gridRowStart = rowStart + 1;
                     const gridColumn = dayIndex + 2;
 
-                    const colors = {
-                        study: 'bg-purple-900/70 border-l-4 border-purple-500 hover:bg-purple-900',
-                        deadline_work: 'bg-rose-900/70 border-l-4 border-rose-500 hover:bg-rose-900',
+                    const staticColors = {
                         break: 'bg-emerald-900/70 border-l-4 border-emerald-500 hover:bg-emerald-900',
                         other: 'bg-slate-700/70 border-l-4 border-slate-500 hover:bg-slate-700',
                     };
 
+                    const itemColorClass = (item.type === 'study' || item.type === 'deadline_work')
+                        ? getTaskColor(item.task)
+                        : staticColors[item.type] || staticColors.other;
+
+
                     return (
                         <div
                             key={`${dayKey}-${itemIndex}`}
-                            className={`p-1.5 rounded overflow-hidden z-10 m-px flex flex-col justify-center transition-colors ${colors[item.type] || colors.other}`}
+                            className={`p-1.5 rounded overflow-hidden z-10 m-px flex flex-col justify-center transition-colors ${itemColorClass}`}
                             style={{
                                 gridRow: `${gridRowStart} / span ${durationInRows}`,
                                 gridColumn: gridColumn,

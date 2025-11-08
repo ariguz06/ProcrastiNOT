@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import type { ToDoTask, WeeklySchedule, Mood, DailyLog, StudyLogEntry, CalendarEvent } from './types';
 import { useLocalStorage } from './hooks/useLocalStorage';
@@ -131,15 +131,15 @@ function App() {
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
   const [calendarEvents, setCalendarEvents] = useLocalStorage<CalendarEvent[]>('calendarEvents', []);
-  const [isCalendarSynced, setIsCalendarSynced] = useState<boolean>(false);
+  const [isCalendarSynced, setIsCalendarSynced] = useLocalStorage<boolean>('isCalendarSynced', false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   const [currentWeekStart, setCurrentWeekStart] = useState(() => getStartOfWeek(new Date()));
+  const isInitialMount = useRef(true);
 
 
   // State for today's check-in, synced with dailyLogs
   const todayString = new Date().toISOString().split('T')[0];
-  const todayLog = dailyLogs.find(log => log.date === todayString);
 
   const [mood, setMood] = useState<Mood>('Neutral');
   const [energyLevel, setEnergyLevel] = useState<number>(50);
@@ -151,6 +151,39 @@ function App() {
         setEnergyLevel(todayLog.energy);
     }
   }, [dailyLogs, todayString]);
+
+  // Effect to re-fetch calendar data and regenerate schedule when week changes
+  useEffect(() => {
+    if (isInitialMount.current) {
+        isInitialMount.current = false;
+        return;
+    }
+
+    const fetchAndRegenerateForWeek = async () => {
+        if (isCalendarSynced) {
+            setIsSyncing(true);
+            setError(null);
+            try {
+                const events = await signInAndFetchEvents(currentWeekStart);
+                setCalendarEvents(events);
+                // Regenerate schedule with the new week's events
+                await handleGenerateSchedule(events);
+            } catch (err) {
+                if (err instanceof Error) {
+                    setError(`Failed to sync calendar for the selected week: ${err.message}`);
+                } else {
+                    setError('An unknown error occurred during calendar sync.');
+                }
+            } finally {
+                setIsSyncing(false);
+            }
+        }
+    };
+
+    fetchAndRegenerateForWeek();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentWeekStart]);
+
 
   const addTask = (task: Omit<ToDoTask, 'id' | 'completed'>) => {
     setTasks(prev => [...prev, { ...task, id: uuidv4(), completed: false }]);
@@ -209,7 +242,7 @@ function App() {
     setIsSyncing(true);
     setError(null);
     try {
-      const events = await signInAndFetchEvents();
+      const events = await signInAndFetchEvents(currentWeekStart);
       setCalendarEvents(events);
       
       // Generate the schedule with the newly fetched events
@@ -227,6 +260,7 @@ function App() {
       } else {
         setError('An unknown error occurred during calendar sync.');
       }
+      setIsCalendarSynced(false);
     } finally {
       setIsSyncing(false);
     }
