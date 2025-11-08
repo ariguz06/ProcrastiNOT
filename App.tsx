@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { ToDoTask, WeeklySchedule, Mood, DailyLog, StudyLogEntry, CalendarEvent } from './types';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { generateWeeklySchedule, getStudyFeedback } from './services/geminiService';
-import { signInAndFetchEvents } from './services/googleCalendarService';
+import { signInAndFetchEvents, addScheduleToCalendar } from './services/googleCalendarService';
 import TaskList from './components/TaskList';
 import ScheduleDisplay from './components/ScheduleDisplay';
 import { BrainIcon } from './components/icons/BrainIcon';
@@ -105,6 +105,15 @@ const StudyLogView: React.FC<StudyLogViewProps> = ({
 };
 
 
+const getStartOfWeek = (date: Date): Date => {
+    const d = new Date(date);
+    const day = d.getDay(); // 0=Sunday, 1=Monday, ...
+    const diff = d.getDate() - day; // Go back to the recent Sunday
+    d.setHours(0, 0, 0, 0);
+    return new Date(d.setDate(diff));
+};
+
+
 function App() {
   const [tasks, setTasks] = useLocalStorage<ToDoTask[]>('tasks', []);
   const [weeklyGoal, setWeeklyGoal] = useLocalStorage<number>('weeklyGoal', 20);
@@ -124,6 +133,8 @@ function App() {
   const [calendarEvents, setCalendarEvents] = useLocalStorage<CalendarEvent[]>('calendarEvents', []);
   const [isCalendarSynced, setIsCalendarSynced] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+
+  const [currentWeekStart, setCurrentWeekStart] = useState(() => getStartOfWeek(new Date()));
 
 
   // State for today's check-in, synced with dailyLogs
@@ -173,7 +184,7 @@ function App() {
     });
   };
 
-  const handleGenerateSchedule = async (eventsToUse?: CalendarEvent[]) => {
+  const handleGenerateSchedule = async (eventsToUse?: CalendarEvent[]): Promise<WeeklySchedule | null> => {
     setIsLoading(true);
     setError(null);
     setSchedule(null);
@@ -181,12 +192,14 @@ function App() {
       const currentEvents = eventsToUse || calendarEvents;
       const generatedSchedule = await generateWeeklySchedule(tasks, weeklyGoal, mood, energyLevel, currentEvents);
       setSchedule(generatedSchedule);
+      return generatedSchedule;
     } catch (err) {
       if (err instanceof Error) {
         setError(err.message);
       } else {
         setError('An unknown error occurred.');
       }
+      return null;
     } finally {
       setIsLoading(false);
     }
@@ -198,9 +211,16 @@ function App() {
     try {
       const events = await signInAndFetchEvents();
       setCalendarEvents(events);
+      
+      // Generate the schedule with the newly fetched events
+      const newSchedule = await handleGenerateSchedule(events);
+
+      // If schedule generation was successful, push it to the calendar
+      if (newSchedule) {
+        await addScheduleToCalendar(newSchedule, tasks, currentWeekStart);
+      }
+
       setIsCalendarSynced(true);
-      // Now, immediately generate the schedule with the new events
-      await handleGenerateSchedule(events);
     } catch (err) {
       if (err instanceof Error) {
         setError(`Failed to sync calendar: ${err.message}`);
@@ -244,6 +264,40 @@ function App() {
     }
     return isCalendarSynced ? 'Calendar Synced ✓' : 'Sync Google Calendar';
   };
+  
+    const handlePreviousWeek = () => {
+        setCurrentWeekStart(prev => {
+            const newDate = new Date(prev);
+            newDate.setDate(newDate.getDate() - 7);
+            return newDate;
+        });
+    };
+
+    const handleNextWeek = () => {
+        setCurrentWeekStart(prev => {
+            const newDate = new Date(prev);
+            newDate.setDate(newDate.getDate() + 7);
+            return newDate;
+        });
+    };
+
+    const handleGoToToday = () => {
+        setCurrentWeekStart(getStartOfWeek(new Date()));
+    };
+
+    const formatDateRange = (startDate: Date): string => {
+        const endDate = new Date(startDate);
+        endDate.setDate(startDate.getDate() + 6);
+        const startMonth = startDate.toLocaleString('default', { month: 'short' });
+        const endMonth = endDate.toLocaleString('default', { month: 'short' });
+
+        if (startMonth === endMonth) {
+            return `${startMonth} ${startDate.getDate()} - ${endDate.getDate()}, ${startDate.getFullYear()}`;
+        } else {
+            return `${startMonth} ${startDate.getDate()} - ${endMonth} ${endDate.getDate()}, ${endDate.getFullYear()}`;
+        }
+    };
+
 
   return (
     <div className="bg-slate-900 text-slate-300 min-h-screen font-sans">
@@ -273,6 +327,13 @@ function App() {
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                     <h2 className="text-xl font-semibold text-indigo-300">Your AI-Generated Weekly Schedule</h2>
                     <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+                         <div className="flex items-center gap-1 bg-slate-800 border border-slate-700 p-1 rounded-lg">
+                            <button onClick={handlePreviousWeek} className="px-2 py-1 rounded-md hover:bg-slate-700 transition-colors" aria-label="Previous week">‹</button>
+                            <button onClick={handleGoToToday} className="text-sm font-semibold hover:text-indigo-400 transition-colors px-2 whitespace-nowrap">
+                                {formatDateRange(currentWeekStart)}
+                            </button>
+                            <button onClick={handleNextWeek} className="px-2 py-1 rounded-md hover:bg-slate-700 transition-colors" aria-label="Next week">›</button>
+                        </div>
                         <button 
                             onClick={syncGoogleCalendar}
                             disabled={isSyncing}
@@ -303,7 +364,7 @@ function App() {
                     </div>
                 </div>
                 {tasks.filter(t => !t.completed).length === 0 && !isLoading && <p className='text-center sm:text-right text-sm text-slate-500 -mt-2'>Add some tasks to generate a schedule.</p>}
-                <ScheduleDisplay schedule={schedule} isLoading={isLoading} error={error} />
+                <ScheduleDisplay schedule={schedule} isLoading={isLoading} error={error} currentWeekStart={currentWeekStart} />
             </div>
             
             {/* Right Sidebar */}

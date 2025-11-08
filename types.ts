@@ -25,7 +25,7 @@ export interface ToDoTask {
 export interface ScheduleItem {
   time: string; // e.g., "09:00 - 10:00"
   task: string;
-  type: 'study' | 'break' | 'other';
+  type: 'study' | 'break' | 'other' | 'deadline_work';
   details?: string;
 }
 

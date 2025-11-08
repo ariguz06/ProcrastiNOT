@@ -1,4 +1,4 @@
-import type { CalendarEvent } from "../types";
+import type { CalendarEvent, WeeklySchedule, ScheduleItem, ToDoTask } from "../types";
 
 // This is a placeholder for the real Google API client.
 // In a real app, you would initialize this after the gapi script loads.
@@ -21,7 +21,8 @@ export async function signInAndFetchEvents(): Promise<CalendarEvent[]> {
     const GOOGLE_API_KEY = 'YOUR_GOOGLE_API_KEY';
     const GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID';
     const DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest"];
-    const SCOPES = "https://www.googleapis.com/auth/calendar.readonly";
+    // NOTE: To add events, scope must be changed to 'https://www.googleapis.com/auth/calendar.events'
+    const SCOPES = "https://www.googleapis.com/auth/calendar.events";
 
     return new Promise((resolve, reject) => {
         gapi.load('client:auth2', () => {
@@ -101,4 +102,116 @@ export async function signInAndFetchEvents(): Promise<CalendarEvent[]> {
     ];
 
     return Promise.resolve(mockEvents);
+}
+
+
+/**
+ * Pushes the generated weekly schedule and defined deadlines to the user's Google Calendar.
+ * 
+ * NOTE: This is a MOCK implementation. A real implementation would require
+ * write access scope ('https://www.googleapis.com/auth/calendar.events')
+ * and use `gapi.client.calendar.events.insert`.
+ */
+export async function addScheduleToCalendar(schedule: WeeklySchedule, tasks: ToDoTask[], weekStart: Date): Promise<void> {
+  console.log("Simulating: Adding AI-generated schedule and deadlines to Google Calendar...");
+  await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate network delay
+
+  const dayNameToIndex: Record<keyof WeeklySchedule, number> = {
+    sunday: 0,
+    monday: 1,
+    tuesday: 2,
+    wednesday: 3,
+    thursday: 4,
+    friday: 5,
+    saturday: 6,
+  };
+
+  const createdEvents: any[] = [];
+  
+  // 1. Add AI-generated study blocks
+  for (const dayName in schedule) {
+    const dayKey = dayName as keyof WeeklySchedule;
+    const items = schedule[dayKey] as ScheduleItem[];
+    const dayIndex = dayNameToIndex[dayKey];
+
+    if (!items) continue;
+
+    for (const item of items) {
+      if (item.type === 'study' || item.type === 'deadline_work') {
+        try {
+          const [startTimeStr, endTimeStr] = item.time.replace(/\s/g, '').split('-');
+          if (!startTimeStr || !endTimeStr) continue;
+
+          const [startHour, startMinute] = startTimeStr.split(':').map(Number);
+          const [endHour, endMinute] = endTimeStr.split(':').map(Number);
+
+          const getEventDate = (hour: number, minute: number): Date => {
+            const eventDate = new Date(weekStart);
+            eventDate.setDate(weekStart.getDate() + dayIndex);
+            eventDate.setHours(hour, minute, 0, 0);
+            return eventDate;
+          };
+
+          const startDate = getEventDate(startHour, startMinute);
+          const endDate = getEventDate(endHour, endMinute);
+
+          const event = {
+            'summary': item.task,
+            'description': 'Scheduled by Gemini Weekly Planner.',
+            'start': {
+              'dateTime': startDate.toISOString(),
+              'timeZone': Intl.DateTimeFormat().resolvedOptions().timeZone,
+            },
+            'end': {
+              'dateTime': endDate.toISOString(),
+              'timeZone': Intl.DateTimeFormat().resolvedOptions().timeZone,
+            },
+            // Color coding: 9=Blue for study, 5=Yellow for deadline work
+            'colorId': item.type === 'study' ? '9' : '5' 
+          };
+          
+          // In a real app, you would call the Google API here:
+          // await gapi.client.calendar.events.insert({ 'calendarId': 'primary', 'resource': event });
+          createdEvents.push(event);
+
+        } catch (e) {
+            console.error(`Could not parse time for scheduled item: "${item.task}" at "${item.time}"`, e);
+        }
+      }
+    }
+  }
+
+  // 2. Add user-defined deadlines as all-day events
+  const deadlineTasks = tasks.filter(task => task.type === 'deadline' && task.dueDate);
+
+  for (const task of deadlineTasks) {
+    try {
+        const dueDate = new Date(task.dueDate!);
+        // Format for an all-day event (YYYY-MM-DD)
+        const dueDateString = dueDate.toISOString().split('T')[0];
+
+        const event = {
+            'summary': `DEADLINE: ${task.name}`,
+            'description': `Deadline for task '${task.name}'.`,
+            'start': {
+                'date': dueDateString,
+            },
+            'end': {
+                'date': dueDateString,
+            },
+            'colorId': '11' // Red color for deadlines
+        };
+        
+        // In a real app, you would call the Google API here:
+        // await gapi.client.calendar.events.insert({ 'calendarId': 'primary', 'resource': event });
+        createdEvents.push(event);
+
+    } catch (e) {
+        console.error(`Could not create calendar event for deadline: "${task.name}"`, e);
+    }
+  }
+
+  console.log("Mock Calendar Sync: The following events would be created:", createdEvents);
+  console.log("Schedule successfully synced to Google Calendar (mock).");
+  return Promise.resolve();
 }
