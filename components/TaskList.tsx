@@ -1,7 +1,8 @@
+
 import React, { useState } from 'react';
 import type { ToDoTask, Importance } from '../types';
-import { TrashIcon } from './icons/TrashIcon';
-import { PlusIcon } from './icons/PlusIcon';
+import { TrashIcon } from '../icons/TrashIcon';
+import { PlusIcon } from '../icons/PlusIcon';
 
 interface TaskListProps {
   tasks: ToDoTask[];

@@ -1,6 +1,7 @@
+
 import React, { useRef, useEffect } from 'react';
 import type { ScheduleItem, WeeklySchedule } from '../types';
-import { BrainIcon } from './icons/BrainIcon';
+import { BrainIcon } from '../icons/BrainIcon';
 
 interface ScheduleDisplayProps {
   schedule: WeeklySchedule | null;

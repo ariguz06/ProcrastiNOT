@@ -1,15 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import type { ToDoTask, WeeklySchedule, Mood, DailyLog, StudyLogEntry, CalendarEvent } from './types';
+import type { ToDoTask, WeeklySchedule, Mood, DailyLog, StudyLogEntry } from './types';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { generateWeeklySchedule, getStudyFeedback } from './services/geminiService';
-import { signInAndFetchEvents, addScheduleToCalendar } from './services/googleCalendarService';
 import TaskList from './components/TaskList';
 import ScheduleDisplay from './components/ScheduleDisplay';
-import { BrainIcon } from './components/icons/BrainIcon';
+import { BrainIcon } from './icons/BrainIcon';
 import MoodTracker from './components/MoodTracker';
 import StudyLogForm from './components/PastDataForm';
-import { TrashIcon } from './components/icons/TrashIcon';
+import { TrashIcon } from './icons/TrashIcon';
 
 // --- StudyLogView Component ---
 interface StudyLogViewProps {
@@ -71,7 +71,7 @@ const StudyLogView: React.FC<StudyLogViewProps> = ({
                 >
                      {isFeedbackLoading ? (
                         <>
-                            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
@@ -130,13 +130,7 @@ function App() {
   const [isFeedbackLoading, setIsFeedbackLoading] = useState(false);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
-  const [calendarEvents, setCalendarEvents] = useLocalStorage<CalendarEvent[]>('calendarEvents', []);
-  const [isCalendarSynced, setIsCalendarSynced] = useLocalStorage<boolean>('isCalendarSynced', false);
-  const [isSyncing, setIsSyncing] = useState<boolean>(false);
-
   const [currentWeekStart, setCurrentWeekStart] = useState(() => getStartOfWeek(new Date()));
-  const isInitialMount = useRef(true);
-
 
   // State for today's check-in, synced with dailyLogs
   const todayString = new Date().toISOString().split('T')[0];
@@ -151,38 +145,6 @@ function App() {
         setEnergyLevel(todayLog.energy);
     }
   }, [dailyLogs, todayString]);
-
-  // Effect to re-fetch calendar data and regenerate schedule when week changes
-  useEffect(() => {
-    if (isInitialMount.current) {
-        isInitialMount.current = false;
-        return;
-    }
-
-    const fetchAndRegenerateForWeek = async () => {
-        if (isCalendarSynced) {
-            setIsSyncing(true);
-            setError(null);
-            try {
-                const events = await signInAndFetchEvents(currentWeekStart);
-                setCalendarEvents(events);
-                // Regenerate schedule with the new week's events
-                await handleGenerateSchedule(events);
-            } catch (err) {
-                if (err instanceof Error) {
-                    setError(`Failed to sync calendar for the selected week: ${err.message}`);
-                } else {
-                    setError('An unknown error occurred during calendar sync.');
-                }
-            } finally {
-                setIsSyncing(false);
-            }
-        }
-    };
-
-    fetchAndRegenerateForWeek();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentWeekStart]);
 
 
   const addTask = (task: Omit<ToDoTask, 'id' | 'completed'>) => {
@@ -217,13 +179,12 @@ function App() {
     });
   };
 
-  const handleGenerateSchedule = async (eventsToUse?: CalendarEvent[]): Promise<WeeklySchedule | null> => {
+  const handleGenerateSchedule = async (): Promise<WeeklySchedule | null> => {
     setIsLoading(true);
     setError(null);
     setSchedule(null);
     try {
-      const currentEvents = eventsToUse || calendarEvents;
-      const generatedSchedule = await generateWeeklySchedule(tasks, weeklyGoal, mood, energyLevel, currentEvents);
+      const generatedSchedule = await generateWeeklySchedule(tasks, weeklyGoal, mood, energyLevel, []);
       setSchedule(generatedSchedule);
       return generatedSchedule;
     } catch (err) {
@@ -235,34 +196,6 @@ function App() {
       return null;
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const syncGoogleCalendar = async () => {
-    setIsSyncing(true);
-    setError(null);
-    try {
-      const events = await signInAndFetchEvents(currentWeekStart);
-      setCalendarEvents(events);
-      
-      // Generate the schedule with the newly fetched events
-      const newSchedule = await handleGenerateSchedule(events);
-
-      // If schedule generation was successful, push it to the calendar
-      if (newSchedule) {
-        await addScheduleToCalendar(newSchedule, tasks, currentWeekStart);
-      }
-
-      setIsCalendarSynced(true);
-    } catch (err) {
-      if (err instanceof Error) {
-        setError(`Failed to sync calendar: ${err.message}`);
-      } else {
-        setError('An unknown error occurred during calendar sync.');
-      }
-      setIsCalendarSynced(false);
-    } finally {
-      setIsSyncing(false);
     }
   };
   
@@ -282,21 +215,6 @@ function App() {
     } finally {
         setIsFeedbackLoading(false);
     }
-  };
-
-  const getSyncButtonContent = () => {
-    if (isSyncing) {
-        return (
-            <>
-                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Syncing...
-            </>
-        )
-    }
-    return isCalendarSynced ? 'Calendar Synced ✓' : 'Sync Google Calendar';
   };
   
     const handlePreviousWeek = () => {
@@ -368,13 +286,6 @@ function App() {
                             </button>
                             <button onClick={handleNextWeek} className="px-2 py-1 rounded-md hover:bg-slate-700 transition-colors" aria-label="Next week">›</button>
                         </div>
-                        <button 
-                            onClick={syncGoogleCalendar}
-                            disabled={isSyncing}
-                            className="w-full sm:w-auto text-sm font-semibold bg-slate-700 hover:bg-slate-600 disabled:bg-slate-700/50 disabled:text-slate-400 disabled:cursor-not-allowed text-white py-3 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center"
-                        >
-                            {getSyncButtonContent()}
-                        </button>
                         <button 
                             onClick={() => handleGenerateSchedule()}
                             disabled={isLoading || tasks.filter(t => !t.completed).length === 0}

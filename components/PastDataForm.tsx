@@ -1,6 +1,7 @@
+
 import React, { useState } from 'react';
 import type { StudyLogEntry, EnergyLevel } from '../types';
-import { PlusIcon } from './icons/PlusIcon';
+import { PlusIcon } from '../icons/PlusIcon';
 
 interface StudyLogFormProps {
   onAdd: (data: Omit<StudyLogEntry, 'id'>) => void;
