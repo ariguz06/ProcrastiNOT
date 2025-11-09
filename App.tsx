@@ -1,15 +1,17 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import type { ToDoTask, WeeklySchedule, Mood, DailyLog, StudyLogEntry } from './types';
+import type { ToDoTask, WeeklySchedule, Mood, DailyLog, StudyLogEntry, CalendarEvent } from './types';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { generateWeeklySchedule, getStudyFeedback } from './services/geminiService';
+import { fetchGoogleCalendarEvents } from './services/googleCalendarService';
 import TaskList from './components/TaskList';
 import ScheduleDisplay from './components/ScheduleDisplay';
 import { BrainIcon } from './icons/BrainIcon';
 import MoodTracker from './components/MoodTracker';
 import StudyLogForm from './components/PastDataForm';
 import { TrashIcon } from './icons/TrashIcon';
+import CalendarEventsPanel from './components/CalendarEventsPanel';
 
 // --- StudyLogView Component ---
 interface StudyLogViewProps {
@@ -132,6 +134,10 @@ function App() {
 
   const [currentWeekStart, setCurrentWeekStart] = useState(() => getStartOfWeek(new Date()));
 
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [isCalendarLoading, setIsCalendarLoading] = useState(false);
+  const [calendarError, setCalendarError] = useState<string | null>(null);
+
   // State for today's check-in, synced with dailyLogs
   const todayString = new Date().toISOString().split('T')[0];
 
@@ -184,7 +190,7 @@ function App() {
     setError(null);
     setSchedule(null);
     try {
-      const generatedSchedule = await generateWeeklySchedule(tasks, weeklyGoal, mood, energyLevel, []);
+      const generatedSchedule = await generateWeeklySchedule(tasks, weeklyGoal, mood, energyLevel, calendarEvents);
       setSchedule(generatedSchedule);
       return generatedSchedule;
     } catch (err) {
@@ -198,6 +204,28 @@ function App() {
       setIsLoading(false);
     }
   };
+
+  const loadCalendarEvents = useCallback(async () => {
+    setIsCalendarLoading(true);
+    setCalendarError(null);
+    try {
+      const events = await fetchGoogleCalendarEvents();
+      setCalendarEvents(events);
+    } catch (err) {
+      console.error('Failed to load calendar events', err);
+      if (err instanceof Error) {
+        setCalendarError(err.message);
+      } else {
+        setCalendarError('Unable to load Google Calendar events.');
+      }
+    } finally {
+      setIsCalendarLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCalendarEvents();
+  }, [loadCalendarEvents]);
   
   const handleGetFeedback = async () => {
     setIsFeedbackLoading(true);
@@ -351,14 +379,22 @@ function App() {
                         />
                     )}
                     {activeTab === 'tasks' && (
-                        <TaskList 
-                            tasks={tasks}
-                            onAddTask={addTask}
-                            onDeleteTask={deleteTask}
-                            onToggleTask={toggleTaskCompletion}
-                            weeklyGoal={weeklyGoal}
-                            onWeeklyGoalChange={setWeeklyGoal}
-                        />
+                        <div className="space-y-4">
+                            <TaskList
+                                tasks={tasks}
+                                onAddTask={addTask}
+                                onDeleteTask={deleteTask}
+                                onToggleTask={toggleTaskCompletion}
+                                weeklyGoal={weeklyGoal}
+                                onWeeklyGoalChange={setWeeklyGoal}
+                            />
+                            <CalendarEventsPanel
+                                events={calendarEvents}
+                                isLoading={isCalendarLoading}
+                                error={calendarError}
+                                onRefresh={loadCalendarEvents}
+                            />
+                        </div>
                     )}
                      {activeTab === 'log' && (
                         <StudyLogView
@@ -394,7 +430,7 @@ function App() {
                         onCheckin={handleDailyCheckin} 
                         dailyLogs={dailyLogs}
                     />
-                    <TaskList 
+                    <TaskList
                         tasks={tasks}
                         onAddTask={addTask}
                         onDeleteTask={deleteTask}
@@ -402,7 +438,15 @@ function App() {
                         weeklyGoal={weeklyGoal}
                         onWeeklyGoalChange={setWeeklyGoal}
                     />
-                     <div className="lg:col-span-2">
+                    <div className="lg:col-span-2">
+                        <CalendarEventsPanel
+                            events={calendarEvents}
+                            isLoading={isCalendarLoading}
+                            error={calendarError}
+                            onRefresh={loadCalendarEvents}
+                        />
+                    </div>
+                    <div className="lg:col-span-2">
                         <StudyLogView
                                 logs={studyLogs}
                                 onAddLog={addStudyLog}
